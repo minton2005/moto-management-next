@@ -1,77 +1,46 @@
+// app/api/repairs/[id]/route.ts
 import { NextResponse } from 'next/server';
-import { mockRepairs } from '@/lib/mockData';
+import { prisma } from '@/lib/prisma';
 
-// PATCH: อัปเดตข้อมูลรายการสั่งซ่อม
+// PATCH: แก้ไขข้อมูลใบสั่งซ่อมตาม ID
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  { params }: { params: { id: string } | Promise<{ id: string }> }
 ) {
   try {
-    const resolvedParams = await params;
-    const id = resolvedParams.id;
+    const resolvedParams = await params; // await params เพื่อดึง id ออกมาให้ถูกต้อง
     const body = await request.json();
 
-    const repairIndex = mockRepairs.findIndex((r: any) => r.id === id);
-
-    if (repairIndex === -1) {
-      return NextResponse.json(
-        { success: false, message: 'ไม่พบรายการสั่งซ่อม' },
-        { status: 404 }
-      );
-    }
-
-    mockRepairs[repairIndex] = {
-      ...mockRepairs[repairIndex],
-      ...body,
-      estimatedCost:
-        body.partsCost !== undefined || body.laborCost !== undefined
-          ? Number(body.partsCost || 0) + Number(body.laborCost || 0)
-          : body.estimatedCost !== undefined
-          ? body.estimatedCost
-          : mockRepairs[repairIndex].estimatedCost,
-    };
-
-    return NextResponse.json({
-      success: true,
-      data: mockRepairs[repairIndex],
+    const updatedRepair = await prisma.repair.update({
+      where: { id: resolvedParams.id },
+      data: {
+        status: body.status,
+        partsCost: body.partsCost !== undefined ? Number(body.partsCost) : undefined,
+        laborCost: body.laborCost !== undefined ? Number(body.laborCost) : undefined,
+        notes: body.notes,
+      },
     });
+
+    return NextResponse.json(updatedRepair);
   } catch (error) {
-    return NextResponse.json(
-      { success: false, message: 'Server Error' },
-      { status: 500 }
-    );
+    console.error('PATCH repair error:', error);
+    return NextResponse.json({ error: 'Failed to update repair' }, { status: 500 });
   }
 }
 
-// DELETE: ลบรายการสั่งซ่อม
+// DELETE: ลบใบสั่งซ่อมตาม ID
 export async function DELETE(
   request: Request,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  { params }: { params: { id: string } | Promise<{ id: string }> }
 ) {
   try {
     const resolvedParams = await params;
-    const id = resolvedParams.id;
-
-    const repairIndex = mockRepairs.findIndex((r: any) => r.id === id);
-
-    if (repairIndex === -1) {
-      return NextResponse.json(
-        { success: false, message: 'ไม่พบรายการสั่งซ่อม' },
-        { status: 404 }
-      );
-    }
-
-    // ลบรายการออกจาก mockRepairs
-    mockRepairs.splice(repairIndex, 1);
-
-    return NextResponse.json({
-      success: true,
-      message: 'ลบรายการสำเร็จ',
+    await prisma.repair.delete({
+      where: { id: resolvedParams.id },
     });
+    return NextResponse.json({ message: 'Repair deleted successfully' });
   } catch (error) {
-    return NextResponse.json(
-      { success: false, message: 'Server Error' },
-      { status: 500 }
-    );
+    console.error('DELETE repair error:', error);
+    return NextResponse.json({ error: 'Failed to delete repair' }, { status: 500 });
   }
 }

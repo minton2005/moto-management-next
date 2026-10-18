@@ -1,23 +1,35 @@
+// app/api/auth/login/route.ts
 import { NextResponse } from 'next/server';
-import { mockUsers } from '../register/route';
+import { prisma } from '@/lib/prisma';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { username, password } = body;
 
-    // ค้นหาผู้ใช้จาก Mock Database
-    const user = mockUsers.find(
-      (u) => u.username === username && u.password === password
-    );
+    // ค้นหาผู้ใช้ในฐานข้อมูล SQLite
+    // @ts-ignore
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: username },
+          { email: username },
+        ],
+      },
+    });
 
-    if (user) {
+    if (user && user.password === password) {
       const response = NextResponse.json({
         success: true,
-        user: { name: user.name, role: 'USER' },
+        user: { 
+          id: user.id,
+          name: user.name || user.username, 
+          email: user.email,
+          role: user.role || 'USER' 
+        },
       });
 
-      response.cookies.set('auth_token', `mock-token-${username}`, {
+      response.cookies.set('auth_token', `token-${user.id}`, {
         httpOnly: true,
         path: '/',
         maxAge: 60 * 60 * 24,
@@ -31,8 +43,9 @@ export async function POST(request: Request) {
       { status: 401 }
     );
   } catch (error) {
+    console.error('Login Error:', error);
     return NextResponse.json(
-      { success: false, message: 'Server Error' },
+      { success: false, message: 'เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์' },
       { status: 500 }
     );
   }

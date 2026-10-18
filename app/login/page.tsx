@@ -53,10 +53,7 @@ export default function LoginPage() {
           <p className="text-sm text-gray-500">ระบบเข้าถึงสำหรับช่างและเจ้าหน้าที่ร้าน</p>
         </div>
 
-        {/* Info Box */}
-        <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800">
-          💡 **บัญชีทดสอบ:** Username: <code className="font-bold">admin</code> | Password: <code className="font-bold">1234</code>
-        </div>
+       
 
         {/* Error Alert */}
         {error && (

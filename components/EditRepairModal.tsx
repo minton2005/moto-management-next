@@ -13,7 +13,7 @@ interface RepairOrder {
   spareParts?: string;
   partsCost?: number;
   laborCost?: number;
-  mileage?: number;
+  mileage?: number | string;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   estimatedCost: number;
   createdAt: string;
@@ -76,7 +76,7 @@ export default function EditRepairModal({
         <div className="flex justify-between items-center border-b border-gray-100 pb-3">
           <div>
             <h2 className="text-lg font-bold text-gray-900">
-              สรุปงานซ่อม #{editingItem.id}
+              สรุปงานซ่อม #{editingItem.id.slice(0, 8)}
             </h2>
             <p className="text-xs text-gray-500">
               {editingItem.customerName} - {editingItem.licensePlate}

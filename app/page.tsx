@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { repairOrderSchema, RepairOrderInput } from '@/lib/validations';
-import { mockRepairs as initialMockData } from '@/lib/mockData';
 import { 
   Search, Plus, Wrench, RefreshCw, X, AlertCircle, 
   Trash2, LogOut, Printer, CheckCircle2, Clock, DollarSign, Edit3 
@@ -22,7 +21,7 @@ export interface RepairOrder {
   spareParts?: string;
   partsCost?: number;
   laborCost?: number;
-  mileage?: number;
+  mileage?: number | string;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   estimatedCost: number;
   createdAt: string;
@@ -36,43 +35,82 @@ export default function HomePage() {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [submitError, setSubmitError] = useState<string>('');
 
-  // State สำหรับ Modal ช่างสรุปงานซ่อม
   const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<RepairOrder | null>(null);
 
   const router = useRouter();
 
-  // 1. โหลดข้อมูลจาก localStorage เมื่อเปิดหน้าเว็บครั้งแรก
-  const loadRepairsFromStorage = () => {
+  // 1. ดึงข้อมูลแบบบังคับไม่ใช้ Cache (No-Store & Timestamp)
+  const fetchRepairsFromAPI = async () => {
     setLoading(true);
     try {
-      const saved = localStorage.getItem('moto_repairs');
-      if (saved) {
-        setRepairs(JSON.parse(saved));
-      } else {
-        // ถ้าเพิ่งเปิดครั้งแรกสุด ใช้ข้อมูลจาก mockData แล้วเซฟลง localStorage
-        localStorage.setItem('moto_repairs', JSON.stringify(initialMockData));
-        setRepairs(initialMockData as RepairOrder[]);
+      // ใช้ parameter ?t= เพื่อป้องกัน Next.js แอบแคชข้อมูลเก่า
+      const res = await fetch(`/api/repairs?t=${Date.now()}`, { cache: 'no-store' });
+      const data = await res.json();
+      
+      if (Array.isArray(data)) {
+        const formattedData = data.map((item: any) => {
+          const parts = Number(item.partsCost) || 0;
+          const labor = Number(item.laborCost) || 0;
+          const calculatedTotal = parts + labor;
+
+          let rawNotes = item.notes || '';
+          let initialEst = 0;
+          
+          // แกะค่าประเมินเริ่มต้นที่แอบฝากไว้ใน notes
+          if (rawNotes.includes('|EST:')) {
+            const splitEst = rawNotes.split('|EST:');
+            rawNotes = splitEst[0].trim();
+            initialEst = Number(splitEst[1]) || 0;
+          }
+
+          // แกะรายการอะไหล่ (ถ้ามีการแก้ไขมาแล้ว)
+          let parsedSpareParts = '';
+          let parsedSymptom = rawNotes;
+          if (rawNotes.includes('\n[อะไหล่]:')) {
+            const splitParts = rawNotes.split('\n[อะไหล่]:');
+            parsedSymptom = splitParts[0].trim();
+            parsedSpareParts = splitParts[1].trim();
+          }
+
+          // แกะรุ่นรถ
+          let brandModel = 'ทั่วไป';
+          if (parsedSymptom.includes('(รุ่น:')) {
+            const splitBrand = parsedSymptom.split('(รุ่น:');
+            parsedSymptom = splitBrand[0].trim();
+            brandModel = splitBrand[1].replace(')', '').trim();
+          }
+
+          return {
+            id: item.id,
+            customerName: item.customer || 'ไม่ระบุชื่อ',
+            phone: item.phone || '',
+            licensePlate: item.licensePlate || '',
+            brandModel,
+            symptom: parsedSymptom,
+            spareParts: parsedSpareParts,
+            partsCost: parts,
+            laborCost: labor,
+            mileage: item.mileage || '-',
+            status: item.status || 'PENDING',
+            // ถ้ารวมค่าอะไหล่+ค่าแรงได้ > 0 ให้ใช้ค่านั้นเป๊ะๆ ถ้ายังไม่มีค่าอะไหล่/แรง ให้ดึงราคาประเมินเดิมมาโชว์
+            estimatedCost: calculatedTotal > 0 ? calculatedTotal : initialEst,
+            createdAt: item.createdAt || new Date().toISOString(),
+          };
+        });
+        setRepairs(formattedData);
       }
     } catch (e) {
-      console.error('Failed to load from localStorage:', e);
-      setRepairs(initialMockData as RepairOrder[]);
+      console.error('Failed to load repairs from API:', e);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadRepairsFromStorage();
+    fetchRepairsFromAPI();
   }, []);
 
-  // ฟังก์ชันบันทึกข้อมูลกลับลง localStorage
-  const saveRepairsToStorage = (updatedData: RepairOrder[]) => {
-    setRepairs(updatedData);
-    localStorage.setItem('moto_repairs', JSON.stringify(updatedData));
-  };
-
-  // กรองข้อมูลตามคำค้นหา และสถานะ
   const filteredRepairs = repairs.filter((item) => {
     const matchesSearch =
       !search ||
@@ -80,13 +118,10 @@ export default function HomePage() {
       item.customerName.toLowerCase().includes(search.toLowerCase()) ||
       item.phone.includes(search) ||
       item.id.toLowerCase().includes(search.toLowerCase());
-
     const matchesStatus = !statusFilter || item.status === statusFilter;
-
     return matchesSearch && matchesStatus;
   });
 
-  // ตัวแปรคำนวณการ์ดสรุปภาพรวม (Summary Widgets)
   const totalOrders = repairs.length;
   const pendingOrders = repairs.filter((r) => r.status === 'PENDING' || r.status === 'IN_PROGRESS').length;
   const completedOrders = repairs.filter((r) => r.status === 'COMPLETED').length;
@@ -102,10 +137,7 @@ export default function HomePage() {
   } = useForm<RepairOrderInput>({
     // @ts-ignore
     resolver: zodResolver(repairOrderSchema),
-    defaultValues: {
-      status: 'PENDING',
-      estimatedCost: 0,
-    },
+    defaultValues: { status: 'PENDING', estimatedCost: 0 },
   });
 
   const selectedBrand = watch('brand');
@@ -128,74 +160,88 @@ export default function HomePage() {
     router.refresh();
   };
 
-  // เปิดใบซ่อมใหม่ -> บันทึกลง localStorage
+  // 2. เปิดใบซ่อมใหม่ (แยกค่าประเมินและค่าแรงออกจากกันชัดเจน)
   const onSubmit = async (data: any) => {
     setSubmitError('');
     try {
-      // หา ID ล่าสุด
-      const maxId = repairs.reduce((max, item) => {
-        const num = parseInt(item.id.replace('REP-', ''), 10) || 0;
-        return num > max ? num : max;
-      }, 0);
+      const res = await fetch('/api/repairs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: data.customerName,
+          phone: data.phone,
+          licensePlate: data.licensePlate,
+          mileage: data.mileage ? `${data.mileage} กม.` : undefined,
+          // ฝากค่าประเมินซ่อนไว้ใน Note เพื่อไม่ให้ไปชนกับค่าแรง
+          notes: `${data.symptom} (รุ่น: ${data.brand || ''} ${data.model || ''}) |EST:${data.estimatedCost || 0}`,
+          status: data.status || 'PENDING',
+          partsCost: 0,
+          laborCost: 0, // เริ่มต้นค่าแรง/ค่าอะไหล่ต้องเป็น 0 รอช่างซ่อมเสร็จค่อยใส่
+        }),
+      });
 
-      const newId = `REP-${String(maxId + 1).padStart(3, '0')}`;
+      if (!res.ok) throw new Error('บันทึกไม่สำเร็จ');
 
-      const newOrder: RepairOrder = {
-        id: newId,
-        customerName: data.customerName,
-        phone: data.phone,
-        licensePlate: data.licensePlate,
-        brandModel: `${data.brand} ${data.model}`,
-        symptom: data.symptom,
-        spareParts: data.spareParts || '',
-        partsCost: Number(data.partsCost) || 0,
-        laborCost: Number(data.laborCost) || 0,
-        mileage: data.mileage ? Number(data.mileage) : undefined,
-        status: data.status,
-        estimatedCost: Number(data.estimatedCost) || 0,
-        createdAt: new Date().toISOString(),
-      };
-
-      const updated = [newOrder, ...repairs];
-      saveRepairsToStorage(updated);
-
+      await fetchRepairsFromAPI();
       reset();
       setIsModalOpen(false);
     } catch (error) {
-      setSubmitError('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      setSubmitError('เกิดข้อผิดพลาดในการบันทึกข้อมูลลงฐานข้อมูล');
     }
   };
 
-  // เปลี่ยนสถานะด่วนในตาราง -> บันทึกลง localStorage
-  const handleUpdateStatus = (id: string, newStatus: any) => {
-    const updated = repairs.map((item) =>
-      item.id === id ? { ...item, status: newStatus } : item
-    );
-    saveRepairsToStorage(updated);
+  const handleUpdateStatus = async (id: string, newStatus: string) => {
+    try {
+      const res = await fetch(`/api/repairs/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) fetchRepairsFromAPI();
+    } catch (error) {
+      console.error('Failed to update status:', error);
+    }
   };
 
-  // ลบรายการ -> บันทึกลง localStorage
-  const handleDelete = (id: string) => {
-    if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้?')) return;
-    const updated = repairs.filter((item) => item.id !== id);
-    saveRepairsToStorage(updated);
+  const handleDelete = async (id: string) => {
+    if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้ออกจากฐานข้อมูล?')) return;
+    try {
+      const res = await fetch(`/api/repairs/${id}`, { method: 'DELETE' });
+      if (res.ok) fetchRepairsFromAPI();
+    } catch (error) {
+      console.error('Failed to delete repair:', error);
+    }
   };
 
-  // เปิด Modal แก้ไข
   const handleOpenEdit = (item: RepairOrder) => {
     setEditingItem(item);
     setIsEditModalOpen(true);
   };
 
-  // บันทึกแก้ไขจาก Modal -> บันทึกลง localStorage
-  const handleSaveEdit = (updatedItem: RepairOrder) => {
-    const updated = repairs.map((item) =>
-      item.id === updatedItem.id ? updatedItem : item
-    );
-    saveRepairsToStorage(updated);
+  // 3. บันทึกแก้ไขจาก Modal (เก็บประวัติอาการเดิมไว้ และต่อท้ายด้วยรายการอะไหล่)
+  const handleSaveEdit = async (updatedItem: RepairOrder) => {
+    try {
+      const res = await fetch(`/api/repairs/${updatedItem.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: updatedItem.status,
+          partsCost: updatedItem.partsCost,
+          laborCost: updatedItem.laborCost,
+          // บันทึกทั้งอาการเดิม และ อะไหล่ที่พิมพ์เข้ามาใหม่รวมกันในคอลัมน์เดียว
+          notes: `${updatedItem.symptom} \n[อะไหล่]: ${updatedItem.spareParts || ''}`,
+        }),
+      });
+
+      if (res.ok) {
+        await fetchRepairsFromAPI();
+        setIsEditModalOpen(false);
+      }
+    } catch (error) {
+      console.error('Failed to save edit:', error);
+    }
   };
 
-  // ฟังก์ชันพิมพ์ใบสั่งซ่อม
   const handlePrint = (item: RepairOrder) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
@@ -232,7 +278,7 @@ export default function HomePage() {
             <div><span class="label">ชื่อลูกค้า:</span> ${item.customerName}</div>
             <div><span class="label">เบอร์โทรศัพท์:</span> ${item.phone}</div>
             <div><span class="label">ทะเบียน / รุ่นรถ:</span> ${item.licensePlate} (${item.brandModel})</div>
-            <div><span class="label">เลขไมล์:</span> ${item.mileage ? item.mileage.toLocaleString() + ' กม.' : '-'}</div>
+            <div><span class="label">เลขไมล์:</span> ${item.mileage ? item.mileage.toString() : '-'}</div>
           </div>
 
           <div style="margin-bottom: 15px;">
@@ -306,16 +352,11 @@ export default function HomePage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'PENDING':
-        return <span className="bg-yellow-100 text-yellow-800 text-xs px-2.5 py-1 rounded-full font-medium">รอการซ่อม</span>;
-      case 'IN_PROGRESS':
-        return <span className="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-full font-medium">กำลังซ่อม</span>;
-      case 'COMPLETED':
-        return <span className="bg-green-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-medium">ซ่อมเสร็จสิ้น</span>;
-      case 'CANCELLED':
-        return <span className="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-medium">ยกเลิก</span>;
-      default:
-        return null;
+      case 'PENDING': return <span className="bg-yellow-100 text-yellow-800 text-xs px-2.5 py-1 rounded-full font-medium">รอการซ่อม</span>;
+      case 'IN_PROGRESS': return <span className="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-full font-medium">กำลังซ่อม</span>;
+      case 'COMPLETED': return <span className="bg-green-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-medium">ซ่อมเสร็จสิ้น</span>;
+      case 'CANCELLED': return <span className="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-medium">ยกเลิก</span>;
+      default: return null;
     }
   };
 
@@ -421,9 +462,9 @@ export default function HomePage() {
               <option value="CANCELLED">ยกเลิก</option>
             </select>
             <button
-              onClick={loadRepairsFromStorage}
+              onClick={fetchRepairsFromAPI}
               className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
-              title="รีเฟรชข้อมูล"
+              title="รีเฟรชข้อมูลจาก Database"
             >
               <RefreshCw className="w-4 h-4"/>
             </button>
@@ -448,16 +489,16 @@ export default function HomePage() {
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-gray-500">กำลังโหลดข้อมูล...</td>
+                    <td colSpan={7} className="text-center py-8 text-gray-500">กำลังดึงข้อมูลจาก SQLite Database...</td>
                   </tr>
                 ) : filteredRepairs.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-gray-500">ไม่พบข้อมูลรายการสั่งซ่อม</td>
+                    <td colSpan={7} className="text-center py-8 text-gray-500">ไม่พบข้อมูลรายการสั่งซ่อมในระบบ</td>
                   </tr>
                 ) : (
                   filteredRepairs.map((item, index) => (
                     <tr key={`${item.id}-${index}`} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="p-4 font-mono font-semibold text-blue-600">{item.id}</td>
+                      <td className="p-4 font-mono font-semibold text-blue-600">{item.id.slice(0, 8)}</td>
                       <td className="p-4">
                         <div className="font-medium text-gray-900">{item.customerName}</div>
                         <div className="text-xs text-gray-500">{item.phone}</div>
@@ -483,7 +524,6 @@ export default function HomePage() {
                             <option value="CANCELLED">ยกเลิก</option>
                           </select>
 
-                          {/* ปุ่มดินสอ สำหรับช่างกดเข้าสรุปรายการอะไหล่/ค่าแรง */}
                           <button
                             onClick={() => handleOpenEdit(item)}
                             className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
@@ -519,17 +559,12 @@ export default function HomePage() {
 
       </div>
 
-      {/* Modal ฟอร์มเปิดใบซ่อมใหม่ */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            
             <div className="flex justify-between items-center p-6 border-b border-gray-100">
               <h2 className="text-lg font-bold text-gray-900">เปิดใบสั่งซ่อมมอเตอร์ไซค์ใหม่</h2>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1"
-              >
+              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600 p-1">
                 <X className="w-5 h-5"/>
               </button>
             </div>
@@ -544,135 +579,61 @@ export default function HomePage() {
 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">ชื่อ-นามสกุล ลูกค้า *</label>
-                <input
-                  type="text"
-                  {...register('customerName')}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="เช่น สมชาย ใจดี"
-                />
-                {errors.customerName && (
-                  <p className="text-red-500 text-xs mt-1">{errors.customerName.message}</p>
-                )}
+                <input type="text" {...register('customerName')} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น สมชาย ใจดี" />
+                {errors.customerName && <p className="text-red-500 text-xs mt-1">{errors.customerName.message}</p>}
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">เบอร์โทรศัพท์ *</label>
-                <input
-                  type="text"
-                  {...register('phone')}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="เช่น 0812345678"
-                />
-                {errors.phone && (
-                  <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>
-                )}
+                <input type="text" {...register('phone')} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น 0812345678" />
+                {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>}
               </div>
 
-              {/* ทะเบียนรถ + ยี่ห้อ + รุ่นรถ */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">ทะเบียนรถ *</label>
-                  <input
-                    type="text"
-                    {...register('licensePlate')}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="เช่น 1กข 1234"
-                  />
-                  {errors.licensePlate && (
-                    <p className="text-red-500 text-xs mt-1">{errors.licensePlate.message}</p>
-                  )}
+                  <input type="text" {...register('licensePlate')} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น 1กข 1234" />
+                  {errors.licensePlate && <p className="text-red-500 text-xs mt-1">{errors.licensePlate.message}</p>}
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">ยี่ห้อรถ *</label>
-                  <input
-                    type="text"
-                    list="brand-list"
-                    {...register('brand', {
-                      onChange: () => {
-                        setValue('model', '');
-                      },
-                    })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="เลือก/พิมพ์ยี่ห้อ..."
-                  />
+                  <input type="text" list="brand-list" {...register('brand', { onChange: () => setValue('model', '') })} className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เลือกยี่ห้อ..." />
                   <datalist id="brand-list">
-                    {Object.keys(modelsByBrand).map((b) => (
-                      <option key={b} value={b} />
-                    ))}
+                    {Object.keys(modelsByBrand).map((b) => <option key={b} value={b} />)}
                   </datalist>
-                  {errors.brand && (
-                    <p className="text-red-500 text-xs mt-1">{errors.brand?.message as string}</p>
-                  )}
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">รุ่นรถ *</label>
-                  <input
-                    type="text"
-                    list="model-list"
-                    disabled={!selectedBrand}
-                    {...register('model')}
-                    className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed placeholder:text-gray-400"
-                    placeholder={selectedBrand ? 'เลือก/พิมพ์รุ่น...' : 'เลือกลิสต์ยี่ห้อก่อน'}
-                  />
+                  <input type="text" list="model-list" disabled={!selectedBrand} {...register('model')} className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed placeholder:text-gray-400" placeholder={selectedBrand ? 'เลือกรุ่น...' : 'เลือกลิสต์ยี่ห้อก่อน'} />
                   <datalist id="model-list">
-                    {availableModels.map((m) => (
-                      <option key={m} value={m} />
-                    ))}
+                    {availableModels.map((m) => <option key={m} value={m} />)}
                   </datalist>
-                  {errors.model && (
-                    <p className="text-red-500 text-xs mt-1">{errors.model?.message as string}</p>
-                  )}
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">อาการแจ้งซ่อม *</label>
-                <textarea
-                  {...register('symptom')}
-                  rows={3}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="เช่น สตาร์ตไม่ติด มีเสียงดังที่เครื่องยนต์..."
-                />
-                {errors.symptom && (
-                  <p className="text-red-500 text-xs mt-1">{errors.symptom.message}</p>
-                )}
+                <textarea {...register('symptom')} rows={3} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น สตาร์ตไม่ติด..." />
+                {errors.symptom && <p className="text-red-500 text-xs mt-1">{errors.symptom.message}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">เลขไมล์ปัจจุบัน (กม.)</label>
-                  <input
-                    type="number"
-                    {...register('mileage')}
-                    placeholder="ระบุหรือไม่ก็ได้ (เช่น 12500)"
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none placeholder:text-gray-400"
-                  />
-                  {errors.mileage && (
-                    <p className="text-red-500 text-xs mt-1">{errors.mileage.message}</p>
-                  )}
+                  <input type="number" {...register('mileage')} placeholder="ระบุหรือไม่ก็ได้" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none placeholder:text-gray-400" />
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">ราคาประเมินเบื้องต้น (บาท)</label>
-                  <input
-                    type="number"
-                    {...register('estimatedCost')}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                  {errors.estimatedCost && (
-                    <p className="text-red-500 text-xs mt-1">{errors.estimatedCost.message}</p>
-                  )}
+                  <input type="number" {...register('estimatedCost')} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">สถานะเริ่มต้น</label>
-                <select
-                  {...register('status')}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                >
+                <select {...register('status')} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                   <option value="PENDING">รอการซ่อม</option>
                   <option value="IN_PROGRESS">กำลังซ่อม</option>
                   <option value="COMPLETED">ซ่อมเสร็จสิ้น</option>
@@ -681,28 +642,14 @@ export default function HomePage() {
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {isSubmitting ? 'กำลังบันทึก...' : 'บันทึกใบซ่อม'}
-                </button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50">ยกเลิก</button>
+                <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">{isSubmitting ? 'กำลังบันทึก...' : 'บันทึกใบซ่อม'}</button>
               </div>
             </form>
-
           </div>
         </div>
       )}
 
-      {/* Modal ช่างสรุปงานซ่อม */}
       <EditRepairModal
         isOpen={isEditModalOpen}
         editingItem={editingItem}
