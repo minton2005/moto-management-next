@@ -44,7 +44,6 @@ export default function HomePage() {
   const fetchRepairsFromAPI = async () => {
     setLoading(true);
     try {
-      // ใช้ parameter ?t= เพื่อป้องกัน Next.js แอบแคชข้อมูลเก่า
       const res = await fetch(`/api/repairs?t=${Date.now()}`, { cache: 'no-store' });
       const data = await res.json();
       
@@ -57,14 +56,12 @@ export default function HomePage() {
           let rawNotes = item.notes || '';
           let initialEst = 0;
           
-          // แกะค่าประเมินเริ่มต้นที่แอบฝากไว้ใน notes
           if (rawNotes.includes('|EST:')) {
             const splitEst = rawNotes.split('|EST:');
             rawNotes = splitEst[0].trim();
             initialEst = Number(splitEst[1]) || 0;
           }
 
-          // แกะรายการอะไหล่ (ถ้ามีการแก้ไขมาแล้ว)
           let parsedSpareParts = '';
           let parsedSymptom = rawNotes;
           if (rawNotes.includes('\n[อะไหล่]:')) {
@@ -73,7 +70,6 @@ export default function HomePage() {
             parsedSpareParts = splitParts[1].trim();
           }
 
-          // แกะรุ่นรถ
           let brandModel = 'ทั่วไป';
           if (parsedSymptom.includes('(รุ่น:')) {
             const splitBrand = parsedSymptom.split('(รุ่น:');
@@ -93,7 +89,6 @@ export default function HomePage() {
             laborCost: labor,
             mileage: item.mileage || '-',
             status: item.status || 'PENDING',
-            // ถ้ารวมค่าอะไหล่+ค่าแรงได้ > 0 ให้ใช้ค่านั้นเป๊ะๆ ถ้ายังไม่มีค่าอะไหล่/แรง ให้ดึงราคาประเมินเดิมมาโชว์
             estimatedCost: calculatedTotal > 0 ? calculatedTotal : initialEst,
             createdAt: item.createdAt || new Date().toISOString(),
           };
@@ -160,7 +155,6 @@ export default function HomePage() {
     router.refresh();
   };
 
-  // 2. เปิดใบซ่อมใหม่ (แยกค่าประเมินและค่าแรงออกจากกันชัดเจน)
   const onSubmit = async (data: any) => {
     setSubmitError('');
     try {
@@ -172,11 +166,10 @@ export default function HomePage() {
           phone: data.phone,
           licensePlate: data.licensePlate,
           mileage: data.mileage ? `${data.mileage} กม.` : undefined,
-          // ฝากค่าประเมินซ่อนไว้ใน Note เพื่อไม่ให้ไปชนกับค่าแรง
           notes: `${data.symptom} (รุ่น: ${data.brand || ''} ${data.model || ''}) |EST:${data.estimatedCost || 0}`,
           status: data.status || 'PENDING',
           partsCost: 0,
-          laborCost: 0, // เริ่มต้นค่าแรง/ค่าอะไหล่ต้องเป็น 0 รอช่างซ่อมเสร็จค่อยใส่
+          laborCost: 0,
         }),
       });
 
@@ -218,7 +211,6 @@ export default function HomePage() {
     setIsEditModalOpen(true);
   };
 
-  // 3. บันทึกแก้ไขจาก Modal (เก็บประวัติอาการเดิมไว้ และต่อท้ายด้วยรายการอะไหล่)
   const handleSaveEdit = async (updatedItem: RepairOrder) => {
     try {
       const res = await fetch(`/api/repairs/${updatedItem.id}`, {
@@ -228,7 +220,6 @@ export default function HomePage() {
           status: updatedItem.status,
           partsCost: updatedItem.partsCost,
           laborCost: updatedItem.laborCost,
-          // บันทึกทั้งอาการเดิม และ อะไหล่ที่พิมพ์เข้ามาใหม่รวมกันในคอลัมน์เดียว
           notes: `${updatedItem.symptom} \n[อะไหล่]: ${updatedItem.spareParts || ''}`,
         }),
       });
@@ -256,8 +247,8 @@ export default function HomePage() {
           <title>ใบสั่งซ่อม - ${item.id}</title>
           <style>
             body { font-family: sans-serif; padding: 25px; color: #333; line-height: 1.6; }
-            .header { text-align: center; border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 20px; }
-            .header h2 { margin: 0; color: #1e3a8a; }
+            .header { text-align: center; border-bottom: 2px solid #059669; padding-bottom: 12px; margin-bottom: 20px; }
+            .header h2 { margin: 0; color: #065f46; }
             .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; font-size: 14px; }
             .label { font-weight: bold; color: #4b5563; }
             table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
@@ -323,7 +314,7 @@ export default function HomePage() {
               }
               <tr class="total-row">
                 <td class="text-right">ราคารวมประเมินทั้งสิ้น:</td>
-                <td class="text-right" style="color: #2563eb; font-size: 16px;">฿${item.estimatedCost.toLocaleString()}</td>
+                <td class="text-right" style="color: #059669; font-size: 16px;">฿${item.estimatedCost.toLocaleString()}</td>
               </tr>
             </tbody>
           </table>
@@ -352,100 +343,100 @@ export default function HomePage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'PENDING': return <span className="bg-yellow-100 text-yellow-800 text-xs px-2.5 py-1 rounded-full font-medium">รอการซ่อม</span>;
+      case 'PENDING': return <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-medium">รอการซ่อม</span>;
       case 'IN_PROGRESS': return <span className="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-full font-medium">กำลังซ่อม</span>;
-      case 'COMPLETED': return <span className="bg-green-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-medium">ซ่อมเสร็จสิ้น</span>;
+      case 'COMPLETED': return <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-medium">ซ่อมเสร็จสิ้น</span>;
       case 'CANCELLED': return <span className="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-medium">ยกเลิก</span>;
       default: return null;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6 sm:p-8">
+    <div className="min-h-screen bg-gray-50/80 p-6 sm:p-8">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-600 text-white rounded-lg">
-              <Wrench className="w-6 h-6" />
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <div className="flex items-center gap-4">
+            <div className="p-3.5 bg-gradient-to-tr from-emerald-600 to-teal-500 text-white rounded-2xl shadow-lg shadow-emerald-500/20">
+              <Wrench className="w-7 h-7" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">ระบบจัดการงานซ่อมมอเตอร์ไซค์</h1>
-              <p className="text-sm text-gray-500">ติดตามและจัดการรายการแจ้งซ่อมของลูกค้า</p>
+              <h1 className="text-xl font-bold text-gray-900 tracking-tight">ระบบจัดการงานซ่อมมอเตอร์ไซค์</h1>
+              <p className="text-xs text-gray-500">ติดตามและจัดการรายการแจ้งซ่อมของลูกค้า</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => setIsModalOpen(true)}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+              className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-xl text-sm transition-all shadow-md shadow-emerald-500/20 flex items-center gap-2 active:scale-95"
             >
               <Plus className="w-4 h-4" /> เปิดใบซ่อมใหม่
             </button>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 border border-gray-200 hover:bg-gray-50 text-gray-600 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+              className="p-2.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-gray-200 hover:border-red-100"
               title="ออกจากระบบ"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-5 h-5" />
             </button>
           </div>
         </div>
 
         {/* Dashboard Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-gray-500">ใบซ่อมทั้งหมด</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">{totalOrders} รายการ</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mt-1">{totalOrders} <span className="text-xs font-normal text-gray-500">รายการ</span></h3>
             </div>
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
               <Wrench className="w-5 h-5" />
             </div>
           </div>
 
-          <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-gray-500">กำลังดำเนินการ/รอซ่อม</p>
-              <h3 className="text-2xl font-bold text-yellow-600 mt-1">{pendingOrders} รายการ</h3>
+              <h3 className="text-2xl font-bold text-amber-600 mt-1">{pendingOrders} <span className="text-xs font-normal text-gray-500">รายการ</span></h3>
             </div>
-            <div className="p-3 bg-yellow-50 text-yellow-600 rounded-lg">
+            <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
               <Clock className="w-5 h-5" />
             </div>
           </div>
 
-          <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-gray-500">ซ่อมเสร็จสิ้น</p>
-              <h3 className="text-2xl font-bold text-green-600 mt-1">{completedOrders} รายการ</h3>
+              <h3 className="text-2xl font-bold text-emerald-600 mt-1">{completedOrders} <span className="text-xs font-normal text-gray-500">รายการ</span></h3>
             </div>
-            <div className="p-3 bg-green-50 text-green-600 rounded-lg">
+            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
               <CheckCircle2 className="w-5 h-5" />
             </div>
           </div>
 
-          <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-gray-500">ประเมินรายรับรวม</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">฿{totalEstimatedCost.toLocaleString()}</h3>
+              <h3 className="text-2xl font-bold text-teal-600 mt-1">฿{totalEstimatedCost.toLocaleString()}</h3>
             </div>
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
+            <div className="p-3 bg-teal-50 text-teal-600 rounded-xl">
               <DollarSign className="w-5 h-5" />
             </div>
           </div>
         </div>
 
         {/* Search & Filter Controls */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
           <div className="relative sm:col-span-2">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/>
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/>
             <input
               type="text"
               placeholder="ค้นหาตาม ทะเบียนรถ, ชื่อลูกค้า หรือเบอร์โทรศัพท์..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white text-gray-900 placeholder:text-gray-400 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 pr-4 py-2.5 bg-gray-50/50 text-gray-900 placeholder:text-gray-400 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
             />
           </div>
 
@@ -453,7 +444,7 @@ export default function HomePage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3.5 py-2.5 bg-gray-50/50 text-gray-900 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
             >
               <option value="">ทุกสถานะงานซ่อม</option>
               <option value="PENDING">รอการซ่อม</option>
@@ -463,7 +454,7 @@ export default function HomePage() {
             </select>
             <button
               onClick={fetchRepairsFromAPI}
-              className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+              className="p-2.5 border border-gray-200 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 text-gray-500 transition-all"
               title="รีเฟรชข้อมูลจาก Database"
             >
               <RefreshCw className="w-4 h-4"/>
@@ -472,10 +463,10 @@ export default function HomePage() {
         </div>
 
         {/* Data Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100 text-gray-600 font-medium">
+              <thead className="bg-gray-50/80 border-b border-gray-100 text-gray-600 font-semibold">
                 <tr>
                   <th className="p-4">เลขที่ใบซ่อม</th>
                   <th className="p-4">ข้อมูลลูกค้า</th>
@@ -497,8 +488,8 @@ export default function HomePage() {
                   </tr>
                 ) : (
                   filteredRepairs.map((item, index) => (
-                    <tr key={`${item.id}-${index}`} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="p-4 font-mono font-semibold text-blue-600">{item.id.slice(0, 8)}</td>
+                    <tr key={`${item.id}-${index}`} className="hover:bg-emerald-50/30 transition-colors">
+                      <td className="p-4 font-mono font-semibold text-emerald-600">{item.id.slice(0, 8)}</td>
                       <td className="p-4">
                         <div className="font-medium text-gray-900">{item.customerName}</div>
                         <div className="text-xs text-gray-500">{item.phone}</div>
@@ -508,14 +499,14 @@ export default function HomePage() {
                         <div className="text-xs text-gray-500">{item.brandModel}</div>
                       </td>
                       <td className="p-4 text-gray-600 max-w-xs truncate">{item.symptom}</td>
-                      <td className="p-4 font-medium text-gray-900">฿{item.estimatedCost.toLocaleString()}</td>
+                      <td className="p-4 font-semibold text-gray-900">฿{item.estimatedCost.toLocaleString()}</td>
                       <td className="p-4">{getStatusBadge(item.status)}</td>
                       <td className="p-4">
                         <div className="flex items-center justify-center gap-2">
                           <select
                             value={item.status}
                             onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
-                            className="text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             title="เปลี่ยนสถานะ"
                           >
                             <option value="PENDING">รอการซ่อม</option>
@@ -534,7 +525,7 @@ export default function HomePage() {
 
                           <button
                             onClick={() => handlePrint(item)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                             title="พิมพ์ใบซ่อม"
                           >
                             <Printer className="w-4 h-4" />
@@ -559,12 +550,13 @@ export default function HomePage() {
 
       </div>
 
+      {/* Modal เปิดใบซ่อมใหม่ */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-gray-100">
             <div className="flex justify-between items-center p-6 border-b border-gray-100">
               <h2 className="text-lg font-bold text-gray-900">เปิดใบสั่งซ่อมมอเตอร์ไซค์ใหม่</h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600 p-1">
+              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100">
                 <X className="w-5 h-5"/>
               </button>
             </div>
@@ -572,41 +564,41 @@ export default function HomePage() {
             {/* @ts-ignore */}
             <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">
               {submitError && (
-                <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm flex items-center gap-2">
+                <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4"/> {submitError}
                 </div>
               )}
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">ชื่อ-นามสกุล ลูกค้า *</label>
-                <input type="text" {...register('customerName')} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น สมชาย ใจดี" />
+                <label className="block text-xs font-bold text-gray-700 mb-1">ชื่อ-นามสกุล ลูกค้า *</label>
+                <input type="text" {...register('customerName')} className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none" placeholder="เช่น สมชาย ใจดี" />
                 {errors.customerName && <p className="text-red-500 text-xs mt-1">{errors.customerName.message}</p>}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">เบอร์โทรศัพท์ *</label>
-                <input type="text" {...register('phone')} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น 0812345678" />
+                <label className="block text-xs font-bold text-gray-700 mb-1">เบอร์โทรศัพท์ *</label>
+                <input type="text" {...register('phone')} className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none" placeholder="เช่น 0812345678" />
                 {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">ทะเบียนรถ *</label>
-                  <input type="text" {...register('licensePlate')} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น 1กข 1234" />
+                  <label className="block text-xs font-bold text-gray-700 mb-1">ทะเบียนรถ *</label>
+                  <input type="text" {...register('licensePlate')} className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none" placeholder="เช่น 1กข 1234" />
                   {errors.licensePlate && <p className="text-red-500 text-xs mt-1">{errors.licensePlate.message}</p>}
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">ยี่ห้อรถ *</label>
-                  <input type="text" list="brand-list" {...register('brand', { onChange: () => setValue('model', '') })} className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เลือกยี่ห้อ..." />
+                  <label className="block text-xs font-bold text-gray-700 mb-1">ยี่ห้อรถ *</label>
+                  <input type="text" list="brand-list" {...register('brand', { onChange: () => setValue('model', '') })} className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none" placeholder="เลือกยี่ห้อ..." />
                   <datalist id="brand-list">
                     {Object.keys(modelsByBrand).map((b) => <option key={b} value={b} />)}
                   </datalist>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">รุ่นรถ *</label>
-                  <input type="text" list="model-list" disabled={!selectedBrand} {...register('model')} className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed placeholder:text-gray-400" placeholder={selectedBrand ? 'เลือกรุ่น...' : 'เลือกลิสต์ยี่ห้อก่อน'} />
+                  <label className="block text-xs font-bold text-gray-700 mb-1">รุ่นรถ *</label>
+                  <input type="text" list="model-list" disabled={!selectedBrand} {...register('model')} className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none disabled:bg-gray-100 disabled:cursor-not-allowed placeholder:text-gray-400" placeholder={selectedBrand ? 'เลือกรุ่น...' : 'เลือกลิสต์ยี่ห้อก่อน'} />
                   <datalist id="model-list">
                     {availableModels.map((m) => <option key={m} value={m} />)}
                   </datalist>
@@ -614,26 +606,26 @@ export default function HomePage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">อาการแจ้งซ่อม *</label>
-                <textarea {...register('symptom')} rows={3} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น สตาร์ตไม่ติด..." />
+                <label className="block text-xs font-bold text-gray-700 mb-1">อาการแจ้งซ่อม *</label>
+                <textarea {...register('symptom')} rows={3} className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none" placeholder="เช่น สตาร์ตไม่ติด..." />
                 {errors.symptom && <p className="text-red-500 text-xs mt-1">{errors.symptom.message}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">เลขไมล์ปัจจุบัน (กม.)</label>
-                  <input type="number" {...register('mileage')} placeholder="ระบุหรือไม่ก็ได้" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none placeholder:text-gray-400" />
+                  <label className="block text-xs font-bold text-gray-700 mb-1">เลขไมล์ปัจจุบัน (กม.)</label>
+                  <input type="number" {...register('mileage')} placeholder="ระบุหรือไม่ก็ได้" className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none placeholder:text-gray-400" />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">ราคาประเมินเบื้องต้น (บาท)</label>
-                  <input type="number" {...register('estimatedCost')} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <label className="block text-xs font-bold text-gray-700 mb-1">ราคาประเมินเบื้องต้น (บาท)</label>
+                  <input type="number" {...register('estimatedCost')} className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">สถานะเริ่มต้น</label>
-                <select {...register('status')} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                <label className="block text-xs font-bold text-gray-700 mb-1">สถานะเริ่มต้น</label>
+                <select {...register('status')} className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none">
                   <option value="PENDING">รอการซ่อม</option>
                   <option value="IN_PROGRESS">กำลังซ่อม</option>
                   <option value="COMPLETED">ซ่อมเสร็จสิ้น</option>
@@ -642,8 +634,8 @@ export default function HomePage() {
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50">ยกเลิก</button>
-                <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">{isSubmitting ? 'กำลังบันทึก...' : 'บันทึกใบซ่อม'}</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-all">ยกเลิก</button>
+                <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-xl text-sm shadow-md shadow-emerald-500/20 disabled:opacity-50 transition-all">{isSubmitting ? 'กำลังบันทึก...' : 'บันทึกใบซ่อม'}</button>
               </div>
             </form>
           </div>
